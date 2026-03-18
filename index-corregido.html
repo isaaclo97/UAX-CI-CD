@@ -79,12 +79,6 @@
             border: 1px solid #e94560;
             color: #e94560;
         }
-
-        .hint {
-            margin-top: 1.5rem;
-            font-size: 0.78rem;
-            color: #444;
-        }
     </style>
 </head>
 <body>
@@ -96,22 +90,19 @@
         <button onclick="verificar()">Validar Cupón</button>
 
         <div id="resultado"></div>
-
-        <p class="hint">¿No tienes el cupón? Quizás está más cerca de lo que crees... 👀</p>
     </div>
 
     <script>
-        // TODO: esto no debería estar aquí — mover a variable de entorno
-        const _secret = "Q1VQT04tU0VDUkVUTy1VQVgtMjAyNg=="; // base64
+        // Secreto inyectado desde GitHub Secrets en tiempo de build
+        const _secret = "PLACEHOLDER_SECRET";
 
         function verificar() {
             const input = document.getElementById("inputCupon").value.trim().toUpperCase();
-            const correcto = atob(_secret);
             const res = document.getElementById("resultado");
 
             res.style.display = "block";
 
-            if (input === correcto) {
+            if (input === _secret) {
                 res.className = "ok";
                 res.textContent = "✅ ¡Cupón válido! Disfruta tu descuento exclusivo.";
             } else {
