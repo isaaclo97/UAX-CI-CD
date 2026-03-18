@@ -8,7 +8,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     permissions:                                                                                                                                               
-    pull-requests: write
+      pull-requests: write
     steps:
       - name: Checkout código del PR
         uses: actions/checkout@v4
