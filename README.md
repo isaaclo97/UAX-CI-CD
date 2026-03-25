@@ -151,41 +151,50 @@ checkov -d . --output json > resultados.json
 
 ### Resultados del escaneo
 
-| Archivo | Pasados | Fallos |
-|---|---|---|
-| `main.tf` (Terraform) | 11 | 44 |
-| `kubernetes.yaml` | 71 | 26 |
-| `Dockerfile` | 58 | 4 |
-| GitHub Actions | 0 | 8 |
-| **TOTAL** | **140** | **82** |
+```bash
+# kubernetes.yaml
+checkov --framework kubernetes -f checkov/kubernetes.yaml --compact --quiet
+checkov --framework secrets   -f checkov/kubernetes.yaml --compact --quiet
 
-**82 checks fallidos** sobre 222 comprobaciones (36.9% de fallos).
+# Dockerfile
+checkov --framework dockerfile -f checkov/Dockerfile --compact --quiet
+checkov --framework secrets    -f checkov/Dockerfile --compact --quiet
+
+# GitHub Actions (requiere que el archivo esté en .github/workflows/)
+checkov --framework github_actions -f checkov/github-actions.yml --compact --quiet
+checkov --framework github_actions -f checkov/deploy.yml --compact --quiet
+```
+
+| Archivo | Scanner | Pasados | Fallos |
+|---|---|---|---|
+| `kubernetes.yaml` | kubernetes | 71 | 26 |
+| `kubernetes.yaml` | secrets | 0 | 1 |
+| `Dockerfile` | dockerfile | 58 | 4 |
+| `Dockerfile` | secrets | 0 | 3 |
+| `github-actions.yml` | github_actions | 35 | 1 |
+| `deploy.yml` | github_actions | 15 | 1 |
+| **TOTAL** | | **179** | **36** |
+
+**36 checks fallidos** sobre 215 comprobaciones (16.7% de fallos).
 
 ### Vulnerabilidades más críticas detectadas
-
-**Terraform:**
-- S3 con ACL pública de lectura y escritura (`CKV_AWS_20`, `CKV_AWS_57`)
-- EC2 sin IMDSv2 obligatorio — permite SSRF al metadata service (`CKV_AWS_79`) **[CRÍTICO]**
-- SSH y RDP abiertos a `0.0.0.0/0` (`CKV_AWS_24`, `CKV_AWS_25`)
-- IAM Policy con `Action: "*"` y `Resource: "*"` — privilegios totales (`CKV_AWS_62`)
-- RDS accesible públicamente sin cifrado ni backups (`CKV_AWS_17`, `CKV_AWS_16`)
 
 **Dockerfile:**
 - Imagen `python:latest` sin tag fijo — riesgo de supply chain (`CKV_DOCKER_7`)
 - Aplicación corriendo como root (`CKV_DOCKER_3`)
-- Secretos hardcodeados en variables `ENV` (`CKV_DOCKER_4`)
+- Uso de `sudo` en instrucciones `RUN` (`CKV2_DOCKER_1`)
+- Credenciales AWS hardcodeadas en `ENV` — detectadas por scanner de secretos (`CKV_SECRET_2`)
 
 **Kubernetes:**
-- Contenedor con `privileged: true` — acceso completo al kernel (`CKV_K8S_6`) **[CRÍTICO]**
-- Capability `SYS_ADMIN` habilitada — permite escape del contenedor (`CKV_K8S_28`) **[CRÍTICO]**
-- `hostNetwork: true` y `hostPID: true` — acceso a red y procesos del nodo
-- Secretos en variables de entorno en texto plano (`CKV_K8S_37`)
+- Contenedor ejecutándose como root sin restricciones (`CKV_K8S_16`) **[CRÍTICO]**
+- Capability `SYS_ADMIN` habilitada — permite escape del contenedor (`CKV_K8S_39`) **[CRÍTICO]**
+- Socket Docker montado — permite crear contenedores privilegiados desde dentro (`CKV_K8S_27`) **[CRÍTICO]**
+- `hostNetwork: true` y `hostPID: true` — acceso a red y procesos del nodo (`CKV_K8S_19`, `CKV_K8S_17`)
+- Sin NetworkPolicy — pod acepta tráfico de cualquier origen (`CKV2_K8S_6`)
 
 **GitHub Actions:**
-- `pull_request_target` con checkout del fork (`CKV_GHA_7`) **[CRÍTICO]**
-- Actions referenciadas por tag flotante, no por SHA (`CKV_GHA_1`)
-- Permisos `write-all` a nivel de workflow (`CKV2_GHA_1`)
-- Inyección de comandos via `${{ github.event.pull_request.title }}` (`CKV_GHA_3`)
+- Inyección de comandos shell via inputs del evento (`CKV_GHA_2`) en `github-actions.yml`
+- Permisos `write-all` a nivel de workflow (`CKV2_GHA_1`) en `deploy.yml`
 
 ### Conexión con ataques reales
 
@@ -193,10 +202,10 @@ Los checks fallidos reproducen los vectores usados por TeamPCP en los ataques a 
 
 | Check | Vector real |
 |---|---|
-| `CKV_GHA_7` | `pull_request_target` mal configurado — usado para robar el PAT inicial de Trivy |
-| `CKV_GHA_1` | Tags sin pinning — force-push de tags para ejecutar código malicioso en workflows |
-| `CKV_AWS_79` | IMDSv2 no obligatorio — SSRF para obtener credenciales cloud desde runners CI |
-| `CKV_K8S_6` | Contenedor privilegiado — instalación de backdoors persistentes en nodos |
+| `CKV_GHA_2` | Shell injection — TeamPCP inyectó comandos via valores de eventos de PRs para exfiltrar secretos |
+| `CKV2_GHA_1` | Permisos write-all — `GITHUB_TOKEN` comprometido usado para aprobar PRs y escribir en ramas protegidas |
+| `CKV_K8S_39` | CAP_SYS_ADMIN — pods con capabilities elevadas para montar el filesystem del host y escalar privilegios |
+| `CKV_SECRET_2` | Credenciales AWS hardcodeadas — cualquier acceso de lectura al repo las expone |
 
 > Ver análisis completo y archivos corregidos en [`checkov/solucion.md`](checkov/solucion.md)
 

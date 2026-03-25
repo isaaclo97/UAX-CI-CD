@@ -7,11 +7,10 @@
 
 Checkov es una herramienta de análisis estático de seguridad para infraestructura como código (IaC). Detecta malas configuraciones en:
 
-- Terraform
 - Dockerfiles
 - Kubernetes (YAML)
 - GitHub Actions
-- CloudFormation, Helm, ARM templates, y más
+- Terraform, CloudFormation, Helm, ARM templates, y más
 
 Es open-source, mantenido por Prisma Cloud (Palo Alto Networks). Cada comprobación tiene un ID único (ej: `CKV_AWS_24`) que corresponde a una política de seguridad concreta y enlaza con documentación oficial.
 
@@ -36,7 +35,7 @@ checkov --version
 
 ## Paso 2 — Problema: `checkov: command not found`
 
-Al ejecutar `checkov -f main.tf` puede aparecer este error:
+Al ejecutar `checkov -d .` puede aparecer este error:
 
 ```
 zsh: command not found: checkov
@@ -61,7 +60,7 @@ find ~/Library/Python -name "checkov" 2>/dev/null
 
 ```bash
 # Ruta completa al binario
-/Users/usuario/Library/Python/3.9/bin/checkov -f main.tf
+/Users/usuario/Library/Python/3.9/bin/checkov -d .
 ```
 
 ### Solución permanente (añadir al PATH)
@@ -83,166 +82,140 @@ checkov --version
 ## Paso 3 — Lanzar el escaneo
 
 ```bash
-# Escanear un archivo concreto
-checkov -f main.tf
-
 # Escanear el directorio completo
 checkov -d .
 
+# Escanear excluyendo una subcarpeta
+checkov -d . --skip-path corregidos
+
 # Exportar resultados en JSON
-checkov -f main.tf --output json > resultados.json
+checkov -d . --output json > resultados.json
 ```
 
-> **Nota sobre GitHub Actions:** Checkov solo detecta workflows de GitHub Actions si los archivos están dentro de `.github/workflows/`. Ejecutar `checkov -f workflow.yml` desde otro directorio no produce resultados.
+> **Nota sobre GitHub Actions:** Checkov solo detecta workflows de GitHub Actions si los archivos están dentro de `.github/workflows/`. Ejecutar `checkov -f workflow.yml` desde otro directorio no produce resultados. Para escanear los archivos de esta carpeta hay que copiarlos temporalmente a esa ruta o usar `--framework github_actions -d .` desde la raíz del repo.
 
 ---
 
 ## Paso 4 — Resultados obtenidos (archivos vulnerables)
 
-| Scanner | Pasados | Fallos | Total |
-|---|---|---|---|
-| Terraform (`main.tf`) | 11 | 44 | 55 |
-| Kubernetes (`kubernetes.yaml`) | 71 | 26 | 97 |
-| Dockerfile | 58 | 4 | 62 |
-| GitHub Actions (`github-actions.yml` + `deploy.yml`) | 0 | 8 | 8 |
-| **TOTAL** | **140** | **82** | **222** |
+```bash
+# kubernetes.yaml
+checkov --framework kubernetes -f kubernetes.yaml --compact --quiet
+checkov --framework secrets   -f kubernetes.yaml --compact --quiet
 
-**82 checks fallidos** sobre 222 comprobaciones totales = **36.9% de fallos**
+# Dockerfile
+checkov --framework dockerfile -f Dockerfile --compact --quiet
+checkov --framework secrets    -f Dockerfile --compact --quiet
+
+# GitHub Actions (requiere que el archivo esté en .github/workflows/)
+checkov --framework github_actions -f github-actions.yml --compact --quiet
+checkov --framework github_actions -f deploy.yml --compact --quiet
+```
+
+| Archivo | Scanner | Pasados | Fallos | Total |
+|---|---|---|---|---|
+| `kubernetes.yaml` | kubernetes | 71 | 26 | 97 |
+| `kubernetes.yaml` | secrets | 0 | 1 | 1 |
+| `Dockerfile` | dockerfile | 58 | 4 | 62 |
+| `Dockerfile` | secrets | 0 | 3 | 3 |
+| `github-actions.yml` | github_actions | 35 | 1 | 36 |
+| `deploy.yml` | github_actions | 15 | 1 | 16 |
+| **TOTAL** | | **179** | **36** | **215** |
+
+**36 checks fallidos** sobre 215 comprobaciones totales = **16.7% de fallos**
 
 ---
 
 ## Paso 5 — Análisis de vulnerabilidades detectadas
 
-### A) Terraform — `main.tf` (44 fallos)
-
-#### S3 Bucket (`aws_s3_bucket.datos_empresa`)
-
-| Check | Descripción |
-|---|---|
-| `CKV_AWS_20` | ACL pública de LECTURA — cualquiera puede leer los objetos |
-| `CKV_AWS_57` | ACL pública de ESCRITURA — cualquiera puede subir/modificar objetos |
-| `CKV2_AWS_6` | Sin bloqueo de acceso público (PublicAccessBlock) |
-| `CKV_AWS_21` | Sin versionado — no hay recuperación ante borrados |
-| `CKV_AWS_18` | Sin logging de accesos al bucket |
-| `CKV_AWS_145` | Sin cifrado KMS por defecto |
-| `CKV2_AWS_62` | Sin notificaciones de eventos configuradas |
-
-#### Instancia EC2 (`aws_instance.servidor_web`)
-
-| Check | Descripción |
-|---|---|
-| `CKV_AWS_79` | IMDSv2 no obligatorio (`http_tokens = "optional"`) — permite SSRF al metadata service **[CRÍTICO]** |
-| `CKV_AWS_88` | IP pública asignada directamente — instancia expuesta a internet |
-| `CKV_AWS_8` | Disco EBS raíz sin cifrar |
-| `CKV_AWS_126` | Monitorización detallada desactivada |
-
-#### Security Group (`aws_security_group.sg_web`)
-
-| Check | Descripción |
-|---|---|
-| `CKV_AWS_24` | SSH (puerto 22) abierto a `0.0.0.0/0` |
-| `CKV_AWS_25` | RDP (puerto 3389) abierto a `0.0.0.0/0` |
-| `CKV_AWS_382` | Todo el tráfico de salida permitido (egress sin restricción) |
-| `CKV_AWS_23` | Sin descripción en las reglas del security group |
-
-#### RDS (`aws_db_instance.base_datos`)
-
-| Check | Descripción |
-|---|---|
-| `CKV_AWS_17` | Base de datos accesible públicamente |
-| `CKV_AWS_16` | Almacenamiento sin cifrar en reposo |
-| `CKV_AWS_133` | Sin backups automáticos (`retention = 0`) |
-| `CKV_AWS_157` | Sin Multi-AZ (sin alta disponibilidad) |
-| `CKV_AWS_129` | Sin logs de auditoría habilitados |
-| `CKV_AWS_161` | Sin autenticación IAM habilitada |
-| `CKV_AWS_118` | Sin monitorización mejorada |
-
-#### IAM Policy (`aws_iam_policy.politica_admin`)
-
-| Check | Descripción |
-|---|---|
-| `CKV_AWS_62` | Política con `*:*` — permite cualquier acción sobre cualquier recurso |
-| `CKV_AWS_63` | `Action = "*"` en la política |
-| `CKV_AWS_355` | `Resource = "*"` para acciones restrictables |
-| `CKV_AWS_286` | Permite escalada de privilegios |
-| `CKV_AWS_287` | Permite exposición de credenciales |
-| `CKV_AWS_288` | Permite exfiltración de datos |
-| `CKV_AWS_289` | Permite gestión de permisos sin restricciones |
-| `CKV_AWS_290` | Permite escritura sin restricciones |
-| `CKV2_AWS_40` | Privilegios IAM completos |
-
-#### CloudTrail (`aws_cloudtrail.trail`)
-
-| Check | Descripción |
-|---|---|
-| `CKV_AWS_36` | Validación de integridad de logs desactivada — un atacante puede modificar logs sin detección |
-| `CKV_AWS_35` | Logs no cifrados con KMS |
-| `CKV_AWS_67` | No habilitado en todas las regiones |
-| `CKV2_AWS_10` | Sin integración con CloudWatch Logs |
-
----
-
-### B) Dockerfile (4 fallos)
+### A) `Dockerfile` — dockerfile scanner (4 fallos)
 
 | Check | Descripción |
 |---|---|
 | `CKV_DOCKER_7` | Imagen base `python:latest` sin tag específico — supply chain risk |
 | `CKV_DOCKER_3` | No se define `USER` — la app corre como root |
 | `CKV_DOCKER_2` | Sin `HEALTHCHECK` — Docker no detecta si la app cae |
-| `CKV_DOCKER_4` | Secretos hardcodeados en variables `ENV` |
+| `CKV2_DOCKER_1` | Uso de `sudo` en instrucciones `RUN` |
+
+### `Dockerfile` — secrets scanner (3 fallos)
+
+| Check | Descripción |
+|---|---|
+| `CKV_SECRET_2` | AWS Access Key hardcodeada (línea 16) |
+| `CKV_SECRET_2` | AWS Access Key hardcodeada (línea 17) |
+| `CKV_SECRET_6` | Cadena Base64 de alta entropía (línea 18) |
 
 ---
 
-### C) Kubernetes — `kubernetes.yaml` (26 fallos, selección de críticos)
+### B) `kubernetes.yaml` — kubernetes scanner (26 fallos)
 
 | Check | Descripción |
 |---|---|
 | `CKV_K8S_16` | `runAsUser: 0` — contenedor ejecutándose como root |
-| `CKV_K8S_6` | `privileged: true` — acceso completo al kernel del host |
-| `CKV_K8S_25` | `allowPrivilegeEscalation: true` |
-| `CKV_K8S_28` | Capability `SYS_ADMIN` habilitada — permite escape de contenedor **[CRÍTICO]** |
-| `CKV_K8S_30` | Capability `NET_ADMIN` habilitada |
-| `CKV_K8S_32` | `hostPID: true` — acceso a procesos del host |
-| `CKV_K8S_4` | `hostNetwork: true` — usa la red del nodo directamente |
+| `CKV_K8S_20` | `allowPrivilegeEscalation: true` |
+| `CKV_K8S_39` | Capability `SYS_ADMIN` habilitada — permite escape de contenedor **[CRÍTICO]** |
+| `CKV_K8S_28` | Capability `NET_RAW` habilitada |
+| `CKV_K8S_25` | Capabilities adicionales asignadas al contenedor |
+| `CKV_K8S_37` | `capabilities` no restringidas (`drop: ALL` ausente) |
+| `CKV_K8S_17` | `hostPID: true` — acceso a procesos del host |
+| `CKV_K8S_19` | `hostNetwork: true` — usa la red del nodo directamente |
+| `CKV_K8S_27` | Socket Docker montado en el contenedor — permite escape **[CRÍTICO]** |
+| `CKV_K8S_10` | Sin requests de CPU definidos |
 | `CKV_K8S_11` | Sin límites de CPU |
-| `CKV_K8S_12` | Sin límites de memoria |
-| `CKV_K8S_14` | Sin `readinessProbe` |
+| `CKV_K8S_12` | Sin requests de memoria definidos |
+| `CKV_K8S_13` | Sin límites de memoria |
 | `CKV_K8S_8` | Sin `livenessProbe` |
+| `CKV_K8S_9` | Sin `readinessProbe` |
 | `CKV_K8S_22` | `readOnlyRootFilesystem: false` — filesystem raíz escribible |
-| `CKV_K8S_37` | Secretos en variables de entorno en texto plano |
+| `CKV_K8S_14` | Imagen con tag `latest` (no fijo) |
+| `CKV_K8S_43` | Imagen sin digest SHA — no garantiza inmutabilidad |
+| `CKV_K8S_23` | Contenedor corriendo como root (`runAsNonRoot` ausente) |
+| `CKV_K8S_40` | UID demasiado bajo — puede colisionar con usuarios del host |
+| `CKV_K8S_29` | Sin `securityContext` en pod/contenedor |
+| `CKV_K8S_31` | Sin perfil `seccomp` configurado |
+| `CKV_K8S_38` | `automountServiceAccountToken` no desactivado |
+| `CKV_K8S_21` | Recursos en namespace `default` (no dedicado) |
+| `CKV2_K8S_6` | Sin `NetworkPolicy` — pod acepta tráfico de cualquier origen |
+
+### `kubernetes.yaml` — secrets scanner (1 fallo)
+
+| Check | Descripción |
+|---|---|
+| `CKV_SECRET_2` | AWS Access Key hardcodeada en variables de entorno |
 
 ---
 
-### D) GitHub Actions — `github-actions.yml` y `deploy.yml` (8 fallos)
+### C) `github-actions.yml` — github_actions scanner (1 fallo)
 
-| Check | Archivo | Descripción |
-|---|---|---|
-| `CKV_GHA_7` | `github-actions.yml` | `pull_request_target` con checkout del fork — permite a código no confiable acceder a secretos del repo base **[CRÍTICO]** |
-| `CKV_GHA_1` | `github-actions.yml` | Actions sin pinning a SHA — los tags pueden ser movidos con force-push |
-| `CKV2_GHA_1` | `github-actions.yml` | Permisos excesivos a nivel de workflow (write en todo) |
-| `CKV_GHA_3` | `github-actions.yml` | Inyección de comandos via `${{ github.event.pull_request.title }}` sin sanitizar |
-| `CKV_GHA_7` | `deploy.yml` | `pull_request_target` con checkout del fork |
-| `CKV_GHA_1` | `deploy.yml` | `actions/checkout@v4` sin SHA fijo |
-| `CKV2_GHA_1` | `deploy.yml` | Sin permisos top-level (hereda write-all por defecto) |
-| — | `deploy.yml` | Auto-aprobación de PRs con `GITHUB_TOKEN` — si el repo tiene branch protection con un solo revisor requerido, esta acción lo salta porque el propio `GITHUB_TOKEN` cuenta como aprobación válida |
+| Check | Descripción |
+|---|---|
+| `CKV_GHA_2` | Comando shell vulnerable a inyección — valor de evento de GitHub interpolado directamente en `run:` |
+
+### D) `deploy.yml` — github_actions scanner (1 fallo)
+
+| Check | Descripción |
+|---|---|
+| `CKV2_GHA_1` | Permisos `write-all` a nivel de workflow — concede escritura sobre todo el repositorio |
+
+> **Nota:** Checkov solo detecta workflows de GitHub Actions cuando el archivo está en `.github/workflows/`. Para escanear los archivos de esta carpeta hay que copiarlos temporalmente a esa ruta. Otras malas configuraciones presentes (como `pull_request_target` o actions sin SHA fijo) pueden no tener checks en la versión instalada de Checkov (3.2.510), pero siguen siendo vulnerabilidades reales descritas en el README.
 
 ---
 
 ## Paso 6 — Cómo leer un resultado de Checkov
 
 ```
-Check: CKV_AWS_24: "Ensure no security groups allow ingress from 0.0.0.0:0 to port 22"
-  FAILED for resource: aws_security_group.sg_web
-  File: /main.tf:65-92
+Check: CKV_K8S_16: "Container should not be privileged"
+  FAILED for resource: Deployment.default.app-vulnerable
+  File: /kubernetes.yaml:7-80
   Guide: https://docs.prismacloud.io/...
 ```
 
 | Campo | Significado |
 |---|---|
-| Check ID | Identificador único de la regla (`CKV_AWS_24`) |
+| Check ID | Identificador único de la regla (`CKV_K8S_16`) |
 | Descripción | Qué está comprobando |
 | `FAILED`/`PASSED` | Resultado |
-| `resource` | Recurso de Terraform/K8s afectado |
+| `resource` | Recurso Kubernetes/Docker afectado |
 | `File` | Archivo y líneas donde está el problema |
 | `Guide` | Enlace a documentación con la remediación |
 
@@ -250,25 +223,36 @@ Check: CKV_AWS_24: "Ensure no security groups allow ingress from 0.0.0.0:0 to po
 
 ## Paso 7 — Conexión con ataques reales (Trivy / TeamPCP)
 
-Los checks que fallaron reproducen **exactamente** los vectores usados por TeamPCP en los ataques de marzo 2026:
+Los checks que fallaron reproducen vectores usados por TeamPCP en los ataques a Trivy de marzo 2026:
 
-| Check | Vector real |
+| Check detectado | Vector real relacionado |
 |---|---|
-| `CKV_GHA_7` | `pull_request_target` mal configurado. El bot `hackerbot-claw` usó este vector para robar el PAT inicial de Trivy |
-| `CKV_GHA_1` | Actions sin pinning a SHA. TeamPCP hizo force-push de tags para que workflows que referenciaban `@v0.34.0` ejecutaran código malicioso |
-| `CKV_AWS_79` | IMDSv2 no obligatorio. Runners CI sin IMDSv2 permiten SSRF hacia el metadata service, obteniendo credenciales cloud |
-| `CKV_K8S_6` | Contenedor privilegiado. TeamPCP creó pods privilegiados en `kube-system` para instalar backdoors persistentes en los nodos |
+| `CKV_GHA_2` (shell injection) | TeamPCP inyectó comandos via valores de eventos de PRs para exfiltrar secretos de entorno en runners CI |
+| `CKV2_GHA_1` (write-all permissions) | Permisos excesivos permitieron al `GITHUB_TOKEN` comprometido escribir en ramas protegidas y aprobar PRs maliciosos |
+| `CKV_K8S_39` (CAP_SYS_ADMIN) | TeamPCP creó pods con capabilities elevadas en `kube-system` para montar el filesystem del host y escalar privilegios |
+| `CKV_K8S_27` (docker socket) | Acceso al socket Docker permite lanzar contenedores privilegiados desde dentro del clúster, escapando el aislamiento |
+| `CKV_SECRET_2` (secretos hardcodeados) | Credenciales AWS embebidas directamente en manifiestos — cualquier acceso de lectura al repo o al clúster las expone |
 
 ---
 
 ## Archivos corregidos
 
-| Original | Corregido | Fallos → Corregidos |
+```bash
+# Resultado del escaneo sobre carpeta corregidos/
+checkov -d corregidos --compact --quiet
+# kubernetes scan results: Passed: 102, Failed: 0
+# dockerfile scan results: Passed: 60,  Failed: 0
+
+checkov --framework github_actions -d corregidos --compact --quiet
+# github_actions scan results: Passed: 56, Failed: 0
+```
+
+| Original | Corregido | Fallos totales → Corregidos |
 |---|---|---|
-| `Dockerfile` | `Dockerfile.fixed` | 4 → 0 |
-| `kubernetes.yaml` | `kubernetes_fixed.yaml` | 26 → 0 |
-| `github-actions.yml` | `github-actions_fixed.yml` | 4 → 0 |
-| `deploy.yml` | `deploy_fixed.yml` | 4 → 0 |
+| `Dockerfile` | `Dockerfile.fixed` | 7 (4 dockerfile + 3 secrets) → 0 |
+| `kubernetes.yaml` | `kubernetes_fixed.yaml` | 27 (26 kubernetes + 1 secret) → 0 |
+| `github-actions.yml` | `github-actions_fixed.yml` | 1 → 0 |
+| `deploy.yml` | `deploy_fixed.yml` | 1 → 0 |
 
 ### `Dockerfile.fixed`
 - Imagen `python:3.11-slim` con tag fijo (no `latest`)
@@ -312,15 +296,13 @@ Los checks que fallaron reproducen **exactamente** los vectores usados por TeamP
 
 ## Conclusión
 
-Con un solo comando (`checkov -d .`) se detectaron **82 problemas de seguridad** en infraestructura que, en producción, podrían permitir:
+Con un solo comando (`checkov -d .`) se detectaron **36 problemas de seguridad** en infraestructura que, en producción, podrían permitir:
 
-- Acceso no autorizado a datos en S3 (bucket público)
-- Robo de credenciales cloud desde el metadata service (IMDS)
-- Escalada de privilegios en Kubernetes
-- Compromiso de pipelines CI/CD via `pull_request_target`
-- Ejecución de código malicioso via supply chain (tags sin pinning)
-- Persistencia en el sistema (contenedores privilegiados)
-- Bypass de revisión de código via auto-aprobación de PRs
+- Escalada de privilegios en Kubernetes (contenedores con capabilities elevadas y socket Docker montado)
+- Exfiltración de credenciales cloud hardcodeadas (AWS keys en Dockerfile y manifiestos K8s)
+- Inyección de comandos en pipelines CI/CD via inputs de eventos GitHub
+- Movimiento lateral en el clúster por ausencia de NetworkPolicy
+- Persistencia en nodos via montaje del socket Docker y filesystem del host
 
 Checkov es gratuito, no requiere infraestructura desplegada (análisis estático) y se puede integrar en cualquier pipeline CI/CD para prevenir estos problemas antes de llegar a producción.
 
@@ -329,26 +311,29 @@ Checkov es gratuito, no requiere infraestructura desplegada (análisis estático
 ## Referencia de comandos
 
 ```bash
-# Escanear un archivo concreto
-checkov -f main.tf
-
 # Escanear directorio completo
 checkov -d .
 
+# Excluir subcarpeta (ej. los corregidos)
+checkov -d . --skip-path corregidos
+
 # Solo mostrar fallos (salida más limpia)
-checkov -d . --compact
+checkov -d . --compact --quiet
 
 # Exportar a JSON
 checkov -d . --output json > resultados.json
 
 # Filtrar checks concretos
-checkov -d . --check CKV_AWS_24,CKV_AWS_25
+checkov -d . --check CKV_K8S_16,CKV_K8S_39
 
 # Excluir un check
-checkov -d . --skip-check CKV_AWS_144
+checkov -d . --skip-check CKV_K8S_43
 
-# Escanear solo Terraform
-checkov -d . --framework terraform
+# Escanear solo Kubernetes
+checkov -d . --framework kubernetes
+
+# Escanear solo Dockerfiles
+checkov -d . --framework dockerfile
 
 # Escanear GitHub Actions (requiere estructura .github/workflows/)
 checkov -d . --framework github_actions
