@@ -1,0 +1,101 @@
+# ============================================================
+# KUBERNETES MANIFEST - VULNERABLE
+# Vulnerabilidades: privileged container, root user, sin limits,
+# hostNetwork, secretos en env, sin readOnlyRootFilesystem
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-vulnerable
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vulnerable-app
+  template:
+    metadata:
+      labels:
+        app: vulnerable-app
+    spec:
+      # VULNERABLE: Usa la red del host directamente
+      hostNetwork: true
+
+      # VULNERABLE: Monta el filesystem del host
+      hostPID: true
+
+      containers:
+        - name: app
+          # VULNERABLE: Imagen latest sin digest
+          image: myapp:latest
+
+          # VULNERABLE: Contenedor privilegiado (acceso total al host)
+          securityContext:
+            privileged: true
+            # VULNERABLE: Corre como root
+            runAsUser: 0
+            runAsNonRoot: false
+            # VULNERABLE: Filesystem raíz escribible
+            readOnlyRootFilesystem: false
+            # VULNERABLE: Permite escalada de privilegios
+            allowPrivilegeEscalation: true
+            capabilities:
+              # VULNERABLE: Añade todas las capabilities
+              add:
+                - NET_ADMIN
+                - SYS_ADMIN
+                - ALL
+
+          # VULNERABLE: Sin límites de recursos (puede consumir todo el nodo)
+          # resources: no definido
+
+          # VULNERABLE: Secretos en variables de entorno en texto plano
+          env:
+            - name: DB_PASSWORD
+              value: "password123"
+            - name: AWS_ACCESS_KEY
+              value: "AKIAIOSFODNN7EXAMPLE"
+            - name: JWT_SECRET
+              value: "mysupersecretjwtkey"
+
+          # VULNERABLE: Sin liveness ni readiness probes
+          # livenessProbe: no definido
+          # readinessProbe: no definido
+
+          ports:
+            - containerPort: 8080
+
+          # VULNERABLE: Monta el socket de Docker (escape de contenedor)
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+
+      volumes:
+        # VULNERABLE: Acceso al socket de Docker del host
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+
+---
+# VULNERABLE: ServiceAccount con permisos de administrador
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-sa
+  namespace: default
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-binding
+subjects:
+  - kind: ServiceAccount
+    name: admin-sa
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  # VULNERABLE: Rol de cluster-admin (acceso total al cluster)
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

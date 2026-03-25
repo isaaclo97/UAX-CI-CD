@@ -1,0 +1,55 @@
+# ============================================================
+# GITHUB ACTIONS WORKFLOW - CORREGIDO
+# Vulnerabilidades originales:
+#   - pull_request_target con checkout del fork (CRITICO)
+#   - Sin pinning SHA en actions
+#   - Sin permisos top-level (hereda write-all por defecto)
+#   - Auto-aprobación de PRs (salta protección de ramas)
+# ============================================================
+
+name: PR Check
+
+# CORREGIDO: pull_request en lugar de pull_request_target.
+# pull_request corre en el contexto del fork (sin acceso a secretos),
+# por lo que no puede ejecutar código malicioso con privilegios elevados.
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+# CORREGIDO: Permisos mínimos a nivel de workflow (CKV2_GHA_1)
+# Solo lo estrictamente necesario para comentar en el PR.
+# CORREGIDO: Permisos mínimos a nivel de workflow (CKV2_GHA_1)
+# ADVERTENCIA: pull-requests: write permite comentar en PRs, pero si el repositorio
+# tiene branch protection configurado con un solo revisor requerido, una acción
+# maliciosa con este permiso podría auto-aprobar PRs y saltarse la revisión humana.
+# Asegúrate de que el repo exija >= 2 revisores humanos si usas este permiso.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      # CORREGIDO: SHA fijo — sin pull_request_target, el checkout
+      # opera sobre el código del fork sin acceso a secretos del repo base.
+      - name: Checkout código del PR
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # CORREGIDO: Se elimina la auto-aprobación automática.
+      # Aprobar PRs programáticamente salta los requisitos de revisión humana
+      # y puede permitir que código malicioso llegue a producción sin revisión.
+      # En su lugar, se deja un comentario informativo.
+      - name: Comentar resultado en PR
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "✅ Checks automáticos superados. Pendiente de revisión humana."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

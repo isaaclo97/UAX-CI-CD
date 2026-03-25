@@ -1,0 +1,28 @@
+name: PR Check
+
+on:
+  pull_request_target:          # ⚠️ VULNERABLE: acceso a secretos desde forks
+    types: [opened, synchronize]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:                                                                                                                                               
+      pull-requests: write
+    steps:
+      - name: Checkout código del PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}  # ⚠️ Ejecuta código del fork
+
+      - name: Aprobar PR automáticamente
+        # ⚠️ VULNERABLE: funciona si el repositorio tiene activado
+        #    Settings → Actions → "Allow GitHub Actions to create and approve pull requests"
+        #    Con branch protection de 2 revisores, esto lo salta porque
+        #    el propio GITHUB_TOKEN cuenta como una aprobación válida.
+        run: |
+          gh pr review ${{ github.event.pull_request.number }} \
+            --approve \
+            --body "✅ Validación automática superada."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

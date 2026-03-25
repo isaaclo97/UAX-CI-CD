@@ -1,0 +1,72 @@
+# ============================================================
+# GITHUB ACTIONS WORKFLOW - CORREGIDO
+# ============================================================
+
+name: CI Pipeline Seguro
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # CORREGIDO: pull_request_target eliminado.
+  # Si es necesario para comentar en PRs de forks, usar un workflow
+  # separado que NO haga checkout del código del PR.
+
+# CORREGIDO: Permisos mínimos a nivel de workflow
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # CORREGIDO: Permisos mínimos a nivel de job
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # CORREGIDO: SHA fijo (el tag @v4 no puede ser movido)
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Setup Python
+        # CORREGIDO: Pinning a SHA completo
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.11"
+
+      # CORREGIDO: Sin impresión de secretos en logs
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # CORREGIDO: Script de dependencias local y verificado, no externo
+      - name: Run setup
+        run: ./scripts/setup.sh
+
+      # CORREGIDO: trivy-action con SHA fijo
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # v0.28.0
+        with:
+          image-ref: myapp:${{ github.sha }}
+
+      - name: Build Docker image
+        run: docker build -t myapp:${{ github.sha }} .
+
+      - name: Push Docker image
+        env:
+          # CORREGIDO: Credenciales desde secrets, nunca hardcodeadas
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          echo "$REGISTRY_PASSWORD" | docker login -u "$REGISTRY_USER" --password-stdin registry.example.com
+          docker push registry.example.com/myapp:${{ github.sha }}
+
+      # CORREGIDO: Input sanitizado — se pasa como variable de entorno, no interpolado en el comando
+      - name: Deploy
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Deploying to $ENVIRONMENT"
+          ./deploy.sh

@@ -1,0 +1,67 @@
+# ============================================================
+# GITHUB ACTIONS WORKFLOW - VULNERABLE
+# Vulnerabilidades: pull_request_target con checkout, permisos
+# excesivos, secretos en logs, sin pinning de actions
+# ============================================================
+
+name: CI Pipeline Vulnerable
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # VULNERABLE: pull_request_target da acceso a secretos del repo base
+  # a código de forks no confiables
+  pull_request_target:
+    branches: [main]
+
+# VULNERABLE: Permisos de escritura para todo el workflow
+permissions:
+  contents: write
+  actions: write
+  packages: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # VULNERABLE: actions/checkout sin fijar a SHA (tag puede ser movido)
+      # Exactamente el vector usado en el ataque a Trivy
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        # VULNERABLE: Sin SHA, solo tag de versión
+        uses: actions/setup-python@v4
+
+      # VULNERABLE: Imprime secretos en los logs
+      - name: Debug secrets
+        run: |
+          echo "Token: ${{ secrets.GITHUB_TOKEN }}"
+          echo "AWS Key: ${{ secrets.AWS_ACCESS_KEY_ID }}"
+          echo "DB Pass: ${{ secrets.DB_PASSWORD }}"
+
+      # VULNERABLE: Descarga y ejecuta script externo sin verificación
+      - name: Install dependencies
+        run: |
+          curl -sSL https://raw.githubusercontent.com/some-user/some-repo/main/install.sh | bash
+
+      # VULNERABLE: Usa trivy-action sin SHA (el vector exacto del ataque)
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@v0.34.0
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t myapp:latest .
+          # VULNERABLE: Credenciales hardcodeadas en el script
+          docker login -u admin -p SuperSecret123! registry.example.com
+          docker push registry.example.com/myapp:latest
+
+      # VULNERABLE: Inyección de comandos via inputs no sanitizados
+      - name: Deploy
+        run: |
+          echo "Deploying ${{ github.event.pull_request.title }}"
+          ./deploy.sh ${{ github.event.inputs.environment }}

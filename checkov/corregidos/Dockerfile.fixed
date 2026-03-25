@@ -1,0 +1,35 @@
+# ============================================================
+# DOCKERFILE CORREGIDO
+# ============================================================
+
+# CORREGIDO: Imagen con tag específico y variante slim (menor superficie)
+FROM python:3.11-slim
+
+# CORREGIDO: Secretos NO van en ENV — se inyectan en runtime
+# vía AWS Secrets Manager, Vault, o variables de entorno del orquestador.
+
+# CORREGIDO: Solo paquetes estrictamente necesarios, sin curl/wget/ssh/sudo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# CORREGIDO: Solo se copia lo necesario (requiere un .dockerignore
+# que excluya .env, .git, __pycache__, etc.)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+
+# CORREGIDO: Crear usuario sin privilegios y cambiar a él
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+USER appuser
+
+# CORREGIDO: Puerto no privilegiado (>= 1024)
+EXPOSE 8080
+
+# CORREGIDO: HEALTHCHECK definido
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+
+CMD ["python", "src/app.py"]
